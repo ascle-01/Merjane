@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "@typescript-eslint/naming-convention": [
+      "error",
+      {
+        "selector": "variable",
+        "modifiers": ["const", "global", "exported"],
+        "format": ["UPPER_CASE", "strictCamelCase"]
+      }
+    ]
+  }
+}

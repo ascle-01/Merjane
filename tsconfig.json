@@ -1,0 +1,25 @@
+{
+  "extends":[
+    "@tsconfig/node20/tsconfig.json",
+    "@tsconfig/strictest/tsconfig.json"
+  ],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "target": "es2020",
+    "outDir": "./dist",
+    "sourceMap": true,
+    "declaration": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "skipLibCheck": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noFallthroughCasesInSwitch": true,
+    "sourceRoot": "/",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
+}
