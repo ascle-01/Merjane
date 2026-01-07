@@ -1,48 +1,67 @@
 import {type Cradle} from '@fastify/awilix';
-import {eq} from 'drizzle-orm';
 import {type INotificationService} from '../notifications.port.js';
-import {products, type Product} from '@/db/schema.js';
+import {
+	type IProductStrategy,
+	type OrderProcessingResult,
+	NormalProductStrategy,
+	SeasonalProductStrategy,
+	ExpirableProductStrategy,
+} from '../strategies/index.js';
+import {type Product} from '@/db/schema.js';
 import {type Database} from '@/db/type.js';
+
+
+ // service responsible for processing product orders
 
 export class ProductService {
 	private readonly ns: INotificationService;
 	private readonly db: Database;
+	private readonly strategies: Map<string, IProductStrategy>;
 
 	public constructor({ns, db}: Pick<Cradle, 'ns' | 'db'>) {
 		this.ns = ns;
 		this.db = db;
+
+		// Initialize strategies for each product type
+		this.strategies = new Map<string, IProductStrategy>([
+			['NORMAL', new NormalProductStrategy()],
+			['SEASONAL', new SeasonalProductStrategy()],
+			['EXPIRABLE', new ExpirableProductStrategy()],
+		]);
 	}
 
-	public async notifyDelay(leadTime: number, p: Product): Promise<void> {
-		p.leadTime = leadTime;
-		await this.db.update(products).set(p).where(eq(products.id, p.id));
-		this.ns.sendDelayNotification(leadTime, p.name);
-	}
+	/**
+	 * Process an order for a product
+	 * Delegates to the appropriate strategy based on product type
+	 *
+	 * @param product - The product to process
+	 * @returns Result of the order processing
+	 * @throws Error if product type is not supported
+	 */
+	public async processProductOrder(product: Product): Promise<OrderProcessingResult> {
+		const strategy = this.strategies.get(product.type);
 
-	public async handleSeasonalProduct(p: Product): Promise<void> {
-		const currentDate = new Date();
-		const d = 1000 * 60 * 60 * 24;
-		if (new Date(currentDate.getTime() + (p.leadTime * d)) > p.seasonEndDate!) {
-			this.ns.sendOutOfStockNotification(p.name);
-			p.available = 0;
-			await this.db.update(products).set(p).where(eq(products.id, p.id));
-		} else if (p.seasonStartDate! > currentDate) {
-			this.ns.sendOutOfStockNotification(p.name);
-			await this.db.update(products).set(p).where(eq(products.id, p.id));
-		} else {
-			await this.notifyDelay(p.leadTime, p);
+		if (!strategy) {
+			throw new Error(`Unsupported product type: ${product.type}`);
 		}
+
+		return strategy.processOrder(product, {
+			db: this.db,
+			ns: this.ns,
+		});
 	}
 
-	public async handleExpiredProduct(p: Product): Promise<void> {
-		const currentDate = new Date();
-		if (p.available > 0 && p.expiryDate! > currentDate) {
-			p.available -= 1;
-			await this.db.update(products).set(p).where(eq(products.id, p.id));
-		} else {
-			this.ns.sendExpirationNotification(p.name, p.expiryDate!);
-			p.available = 0;
-			await this.db.update(products).set(p).where(eq(products.id, p.id));
-		}
+	/**
+	 * Process multiple products in an order
+	 *
+	 * @param products - Array of products to process
+	 * @returns Array of processing results
+	 */
+	public async processMultipleProducts(products: Product[]): Promise<OrderProcessingResult[]> {
+		const results = await Promise.all(
+			products.map(async product => this.processProductOrder(product)),
+		);
+
+		return results;
 	}
 }

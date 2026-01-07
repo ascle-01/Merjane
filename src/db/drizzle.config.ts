@@ -10,7 +10,7 @@ const dotenvPath = process.env['CONFIG_PATH']
 dotenv.config(dotenvPath ? {path: dotenvPath} : undefined);
 
 export default defineConfig({
-	schema: path.resolve(__dirname, 'schema.ts'),
+	schema: './src/db/schema.ts',
 	dialect: 'sqlite',
 	dbCredentials: {
 		url: process.env['DB_URI']!,

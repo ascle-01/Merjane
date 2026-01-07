@@ -5,7 +5,7 @@ import {eq} from 'drizzle-orm';
 import fastifyPlugin from 'fastify-plugin';
 import {serializerCompiler, validatorCompiler, type ZodTypeProvider} from 'fastify-type-provider-zod';
 import {z} from 'zod';
-import {orders, products} from '@/db/schema.js';
+import {orders} from '@/db/schema.js';
 
 export const myController = fastifyPlugin(async server => {
 	// Add schema validator and serializer
@@ -21,7 +21,9 @@ export const myController = fastifyPlugin(async server => {
 	}, async (request, reply) => {
 		const dbse = server.diContainer.resolve('db');
 		const ps = server.diContainer.resolve('ps');
-		const order = (await dbse.query.orders
+
+		// Fetch order with associated products
+		const order = await dbse.query.orders
 			.findFirst({
 				where: eq(orders.id, request.params.orderId),
 				with: {
@@ -32,56 +34,21 @@ export const myController = fastifyPlugin(async server => {
 						},
 					},
 				},
-			}))!;
+			});
+
+		if (!order) {
+			await reply.code(404).send({error: 'Order not found'});
+			return;
+		}
+
 		console.log(order);
-		const ids: number[] = [request.params.orderId];
-		const {products: productList} = order;
 
-		if (productList) {
-			for (const {product: p} of productList) {
-				switch (p.type) {
-					case 'NORMAL': {
-						if (p.available > 0) {
-							p.available -= 1;
-							await dbse.update(products).set(p).where(eq(products.id, p.id));
-						} else {
-							const {leadTime} = p;
-							if (leadTime > 0) {
-								await ps.notifyDelay(leadTime, p);
-							}
-						}
-
-						break;
-					}
-
-					case 'SEASONAL': {
-						const currentDate = new Date();
-						if (currentDate > p.seasonStartDate! && currentDate < p.seasonEndDate! && p.available > 0) {
-							p.available -= 1;
-							await dbse.update(products).set(p).where(eq(products.id, p.id));
-						} else {
-							await ps.handleSeasonalProduct(p);
-						}
-
-						break;
-					}
-
-					case 'EXPIRABLE': {
-						const currentDate = new Date();
-						if (p.available > 0 && p.expiryDate! > currentDate) {
-							p.available -= 1;
-							await dbse.update(products).set(p).where(eq(products.id, p.id));
-						} else {
-							await ps.handleExpiredProduct(p);
-						}
-
-						break;
-					}
-				}
-			}
+		// Process all products in the order
+		if (order.products && order.products.length > 0) {
+			const productsToProcess = order.products.map(({product}) => product);
+			await ps.processMultipleProducts(productsToProcess);
 		}
 
 		await reply.send({orderId: order.id});
 	});
 });
-

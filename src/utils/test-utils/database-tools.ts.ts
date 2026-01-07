@@ -19,7 +19,12 @@ export async function cleanAllLooseDatabases(prefix: string) {
 }
 
 export async function cleanUp(databaseName: string) {
-	await rm(databaseName, {force: true});
+	try {
+		await rm(databaseName, {force: true});
+	} catch (error) {
+		// Ignore errors on cleanup - database might be locked on Windows
+		console.warn(`Could not clean up database ${databaseName}:`, error);
+	}
 }
 
 export async function createDatabaseMock() {
@@ -31,5 +36,6 @@ export async function createDatabaseMock() {
 	const databaseMock = drizzle(sqlite, {
 		schema,
 	});
-	return {databaseMock, databaseName};
+
+	return {databaseMock, databaseName, sqlite};
 }
